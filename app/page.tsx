@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Heart, Send } from 'lucide-react';
 import Head from "next/head";
 
@@ -13,13 +14,18 @@ interface Message {
   content: string;
 }
 
+interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+
 export default function ChatGE() {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState<string>("");
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [threadId, setThreadId] = useState<string | null>(null);
 
-  // Your existing prompts...
   const generalPrompts = [
     "How does the General Election affect me?",
     "When is the next General Election?",
@@ -34,10 +40,46 @@ export default function ChatGE() {
     { name: "Green Party", prompt: "What are the Green Party's (GP) main policies?" },
   ];
 
+  const faqItems: FAQItem[] = [
+    {
+      question: "When is the next General Election in Ireland?",
+      answer: "The next Irish General Election must be held no later than February 2025, but the exact date is yet to be announced."
+    },
+    {
+      question: "How does the Irish voting system work?",
+      answer: "Ireland uses a proportional representation system with a single transferable vote (PR-STV) for general elections. Voters rank candidates in order of preference on their ballot papers."
+    },
+    {
+      question: "Who can vote in Irish General Elections?",
+      answer: "Irish citizens aged 18 or over who are ordinarily resident in Ireland and registered to vote are eligible to participate in General Elections."
+    },
+    {
+      question: "How do I register to vote?",
+      answer: "You can register to vote by completing a voter registration form and returning it to your local authority. Forms are available from local authorities, post offices, and online at checktheregister.ie."
+    }
+  ];
+
+  function formatResponse(text: string): string {
+    if (typeof text !== 'string') {
+      return "<p>Invalid response format</p>";
+    }
+
+    let cleanText = text.replace(/【\d+:\d+†source】/g, '');
+    cleanText = cleanText
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+      .replace(/_(.*?)_/g, '<em>$1</em>')              // Italic
+      .replace(/`([^`]+)`/g, '<code>$1</code>');       // Inline code
+
+    const paragraphs = cleanText.split('\n\n');
+    return paragraphs
+      .map(paragraph => `<p>${paragraph.trim().replace(/\n/g, '<br>')}</p>`)
+      .join('');
+  }
+
   const askGPT = async (question: string) => {
     setIsLoading(true);
   
-    const updatedChatHistory = [...chatHistory, { role: 'user', content: question }];
+    const updatedChatHistory: Message[] = [...chatHistory, { role: 'user', content: question }];
     setChatHistory(updatedChatHistory);
   
     try {
@@ -48,18 +90,22 @@ export default function ChatGE() {
         },
         body: JSON.stringify({
           messages: updatedChatHistory,
-          threadId: threadId, // Send the current threadId
+          threadId: threadId ?? undefined,
         }),
       });
   
-      const data = await res.json();
-      if (res.ok) {
-        setChatHistory((prev) => [...prev, { role: 'assistant', content: data.response }]);
+      const data: { response?: string; threadId?: string; error?: any } = await res.json();
+      if (res.ok && data.response) {
+        setChatHistory((prev) => [
+          ...prev,
+          { role: 'assistant', content: formatResponse(data.response ?? "No response available") },
+        ] as Message[]);        
+        
         if (data.threadId) {
-          setThreadId(data.threadId); // Store the threadId for future messages
+          setThreadId(data.threadId);
         }
       } else {
-        console.error("Server Error:", data.error);
+        console.error("Server Error:", data.error || "No response provided.");
       }
     } catch (error) {
       console.error('Error:', error);
@@ -67,6 +113,7 @@ export default function ChatGE() {
     setIsLoading(false);
     setInput("");
   };
+  
 
   const handlePromptClick = (prompt: string) => {
     setInput(prompt);
@@ -92,14 +139,13 @@ export default function ChatGE() {
           <Card className="bg-white shadow-lg rounded-lg overflow-hidden mb-12">
             <div className="p-6 md:p-8">
               <h2 className="text-3xl font-semibold mb-6 text-center">Ask about the Irish General Election</h2>
-              
-              {/* Tabs for General Questions and Political Parties */}
+
               <Tabs defaultValue="general" className="mb-8">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="general">General Questions</TabsTrigger>
                   <TabsTrigger value="parties">Political Parties</TabsTrigger>
                 </TabsList>
-                
+
                 <TabsContent value="general" className="mt-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {generalPrompts.map((prompt, index) => (
@@ -114,7 +160,7 @@ export default function ChatGE() {
                     ))}
                   </div>
                 </TabsContent>
-                
+
                 <TabsContent value="parties" className="mt-4">
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {partyPrompts.map((party, index) => (
@@ -131,7 +177,6 @@ export default function ChatGE() {
                 </TabsContent>
               </Tabs>
 
-              {/* Chat Interface */}
               <div className="mb-4 h-64 overflow-y-auto border border-gray-200 rounded p-4">
                 {chatHistory.map((message, index) => (
                   <div
@@ -149,7 +194,6 @@ export default function ChatGE() {
                 {isLoading && <p>Thinking...</p>}
               </div>
 
-              {/* Input Area */}
               <div className="flex flex-col space-y-2">
                 <Textarea
                   value={input}
@@ -158,7 +202,7 @@ export default function ChatGE() {
                   className="flex-grow resize-none"
                   rows={3}
                 />
-                <Button 
+                <Button
                   onClick={() => askGPT(input)}
                   disabled={isLoading}
                   className="bg-green-600 hover:bg-green-700 text-white self-end"
@@ -168,6 +212,19 @@ export default function ChatGE() {
               </div>
             </div>
           </Card>
+
+          {/* FAQ Section */}
+          <section className="bg-white shadow-lg rounded-lg overflow-hidden p-6 md:p-8">
+            <h2 className="text-3xl font-semibold mb-6">Frequently Asked Questions</h2>
+            <Accordion type="single" collapsible className="w-full">
+              {faqItems.map((item, index) => (
+                <AccordionItem key={index} value={`item-${index}`}>
+                  <AccordionTrigger>{item.question}</AccordionTrigger>
+                  <AccordionContent>{item.answer}</AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </section>
         </main>
 
         <footer className="bg-gray-800 text-white py-6">
